@@ -1,5 +1,6 @@
 ﻿using UnityEngine;
 using System.Collections;
+using System.Diagnostics;
 
 /// <summary>
 /// Place the labels for the Transitions in this enum.
@@ -47,6 +48,20 @@ public class EnemyBehaviour : MonoBehaviour {
 		//ChasePlayerState chase = null;
 
 		fsm = new FSMSystem();
+		// Tạo và thêm trạng thái PatrolState vào FSM
+		PatrolState patrolState = new PatrolState(gameObject, wp);
+		patrolState.AddTransition(Transition.SawPlayer, StateID.ChasingPlayerID); // Chuyển sang trạng thái ChasePlayerState khi nhìn thấy người chơi
+		fsm.AddState(patrolState);
+
+		// Tạo và thêm trạng thái ChasePlayerState vào FSM
+		ChasePlayerState chasePlayerState = new ChasePlayerState(gameObject, player);
+		chasePlayerState.AddTransition(Transition.LostPlayer, StateID.PatrollingID); // Chuyển về trạng thái PatrolState khi mất tầm nhìn của người chơi
+		fsm.AddState(chasePlayerState);
+
+		// Thiết lập trạng thái ban đầu cho FSM
+		//fsm.SetCurrentState(patrolState);
+		fsm.PerformTransition(Transition.NullTransition);
+
 	}
 
 	public void SetTransition(Transition t) { fsm.PerformTransition(t); }
@@ -66,7 +81,17 @@ public class EnemyBehaviour : MonoBehaviour {
 		//TODO: Check if the player is in sight. Consider that:
 		//    He can only be in sight if angle is less than the field of view.
 		//    You should use Raycasting to determine if obstacles are blocking the view of the player.
-
+		if (angle <= fieldOfViewAngle * 0.5f) // Kiểm tra góc nhìn của kẻ thù
+		{
+			RaycastHit hit;
+			if (Physics.Raycast(npc.transform.position, toPlayer.normalized, out hit, sightRange))
+			{
+				if (hit.collider.gameObject == player) // Kiểm tra xem có nhìn thấy người chơi không
+				{
+					return true;
+				}
+			}
+		}
 		return false;
 	}
 }
@@ -92,6 +117,7 @@ public class PatrolState : FSMState
 		//Check line of sight.
 		if (npc.GetComponent<EnemyBehaviour>().PlayerInSight (player, npc)) {
 			//TODO: Make a transition using Transition.SawPlayer.
+			npc.GetComponent<EnemyBehaviour>().fsm.PerformTransition(Transition.SawPlayer);
 
 		}
 	}
@@ -99,11 +125,32 @@ public class PatrolState : FSMState
 
 	public override void Act(GameObject player, GameObject npc)
 	{
+		// Kiểm tra xem waypoints có được khởi tạo không
+		if (waypoints == null || waypoints.Length == 0)
+		{
+			UnityEngine.Debug.LogError("Waypoints are not initialized.");
+
+			return;
+		}
+
+		// Kiểm tra xem currentWayPoint có hợp lệ không
+		if (currentWayPoint < 0 || currentWayPoint >= waypoints.Length)
+		{
+			UnityEngine.Debug.LogError("Invalid currentWayPoint index.");
+			return;
+		}
 		//TODO: Program the Patrol State Act. It should update the currentWayPoint to the next one, 
 		// in case the current one is reached by the agent.
 
 
+		// Move towards the current waypoint
+		npc.GetComponent<UnityEngine.AI.NavMeshAgent>().destination = waypoints[currentWayPoint].position;
 
+		// Update current waypoint if reached
+		if (Vector3.Distance(npc.transform.position, waypoints[currentWayPoint].position) < 1f)
+		{
+			currentWayPoint = (currentWayPoint + 1) % waypoints.Length;
+		}
 
 
 
@@ -130,6 +177,7 @@ public class ChasePlayerState : FSMState
 		//Check line of sight.
 		if (!npc.GetComponent<EnemyBehaviour>().PlayerInSight (player, npc)) {
 			//TODO: Make a transition using Transition.LostPlayer.
+			npc.GetComponent<EnemyBehaviour>().fsm.PerformTransition(Transition.LostPlayer);
 
 		}
 	}
@@ -139,7 +187,11 @@ public class ChasePlayerState : FSMState
 		//TODO: Program the Chase State Act. It should chase the player's position until being 
 		//  at a distance less than 'stopDist'. You can use the methods from EnemyAnimation.
 
+		// Move towards the player
+		npc.GetComponent<UnityEngine.AI.NavMeshAgent>().destination = player.transform.position;
 
+		// Update the target for animation
+		enemyAnimation.setTarget(player.transform, chaseSpeed);
 
 
 
